@@ -26,7 +26,6 @@ from hardware import init_hardware
 from outputs.console import write_payload
 from payload import build_payload
 from sensors.tof import init_sensors as init_tof_sensors
-from sensors.ultrasonic import init_sensors as init_ultrasonic_sensors
 
 
 def init_sensor_stack():
@@ -37,10 +36,7 @@ def init_sensor_stack():
             VL53_CHANNELS,
             TIMING_BUDGET_US,
         ),
-        "ultrasonic": init_ultrasonic_sensors(
-            hardware.ads,
-            ULTRASONIC_CHANNELS,
-        ),
+        
     }
 
 
