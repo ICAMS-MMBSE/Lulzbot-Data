@@ -1,0 +1,7 @@
+adafruit-blinka
+adafruit-circuitpython-tca9548a
+adafruit-circuitpython-vl53l0x
+adafruit-circuitpython-ads1x15
+# Optional sensors for later expansion
+adafruit-circuitpython-amg88xx
+adafruit-circuitpython-mpu6050
