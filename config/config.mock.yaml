@@ -1,0 +1,46 @@
+# Development config: full pipeline with mock drivers, no hardware needed.
+# Run:  python -m sensor_service --config config/config.mock.yaml
+# (Point host at any broker you can reach; mosquitto on localhost works.)
+mqtt:
+  host: localhost
+  port: 1883
+  base_topic: "Lulzbot"
+  client_id: "lulzbot-sensor-service-dev"
+
+i2c:
+  mux: { driver: tca9548a, address: 0x70 }
+
+logging: { level: DEBUG, format: plain }
+
+use_mock_drivers: true
+
+sensors:
+  - { name: tof_z,            driver: vl53l0x,  mux_channel: 0, address: 0x29,
+      sample_rate_hz: 20,  topic_suffix: position/z, role: z_position,
+      params: { axis: z, sign: 1.0,  offset_mm: 0.0 } }
+  - { name: tof_x,            driver: vl53l1x,  mux_channel: 1, address: 0x29,
+      sample_rate_hz: 20,  topic_suffix: position/x, role: x_position,
+      params: { axis: x, sign: -1.0, offset_mm: 300.0 } }
+  - { name: tof_y,            driver: vl53l1x,  mux_channel: 2, address: 0x29,
+      sample_rate_hz: 20,  topic_suffix: position/y, role: y_position,
+      params: { axis: y, sign: -1.0, offset_mm: 300.0 } }
+  - { name: accel_buildplate, driver: adxl345,  mux_channel: 3, address: 0x53,
+      sample_rate_hz: 50,  topic_suffix: acceleration/buildplate, role: buildplate_vibration }
+  - { name: imu_printhead,    driver: mpu6050,  mux_channel: 4, address: 0x68,
+      sample_rate_hz: 50,  topic_suffix: acceleration/printhead, role: printhead_motion }
+  - { name: thermal_cam,      driver: amg8833,  mux_channel: 5, address: 0x69,
+      sample_rate_hz: 2,   topic_suffix: thermal, role: thermal_view }
+  - { name: environment,      driver: bme280,   mux_channel: 6, address: 0x77,
+      sample_rate_hz: 0.5, topic_suffix: environment, role: ambient_environment }
+  - { name: proximity,        driver: vcnl4010, mux_channel: 7, address: 0x13,
+      sample_rate_hz: 5,   topic_suffix: proximity, role: person_detection,
+      params: { present_threshold: 2200, hysteresis: 200 } }
+
+fusion:
+  position: { enabled: true, publish_rate_hz: 10, max_age_s: 1.0 }
+
+validation:
+  enabled: true
+  octoprint_base_topic: "octoPrint"
+  max_alignment_gap_s: 0.5
+  csv_dir: ./validation_logs

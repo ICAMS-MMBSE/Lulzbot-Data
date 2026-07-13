@@ -1,0 +1,27 @@
+[Unit]
+Description=Lulzbot multi-sensor MQTT monitoring service
+# Independent of OctoPrint: no Requires=/BindsTo= on octoprint.service.
+# The printer keeps printing if this service dies, and vice versa.
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+# Adjust paths if you install elsewhere.
+WorkingDirectory=/opt/lulzbot-sensors
+ExecStart=/opt/lulzbot-sensors/venv/bin/python -m sensor_service --config /etc/lulzbot-sensors/config.yaml
+# Broker credentials can be supplied via environment (config uses ${VAR}):
+# EnvironmentFile=/etc/lulzbot-sensors/env
+Restart=on-failure
+RestartSec=5
+# Give the LWT a chance on shutdown.
+TimeoutStopSec=10
+# Hardening (relax if you add features that need more)
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/log/lulzbot-sensors
+
+[Install]
+WantedBy=multi-user.target

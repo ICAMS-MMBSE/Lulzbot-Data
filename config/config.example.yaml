@@ -1,0 +1,178 @@
+# =============================================================================
+# Lulzbot sensor service configuration -- FULLY COMMENTED EXAMPLE
+#
+# Copy to config.yaml and edit. Everything hardware-specific (mux channels,
+# I2C addresses, rates) lives HERE, never in code.
+# =============================================================================
+
+mqtt:
+  # Local Mosquitto on this Pi. To forward telemetry to the factory system,
+  # configure a Mosquitto bridge (see README) rather than pointing this
+  # service at a remote broker.
+  host: localhost
+  port: 1883
+  # Credentials optional. ${VAR} expands from the environment, so secrets can
+  # stay out of this file (set via systemd Environment= or an EnvironmentFile).
+  username: null            # e.g. "sensors" or "${MQTT_USERNAME}"
+  password: null            # e.g. "${MQTT_PASSWORD}"
+  base_topic: "Lulzbot"     # root of every topic this service publishes
+  client_id: "lulzbot-sensor-service"
+  keepalive: 30
+  qos:
+    telemetry: 0            # high-rate data: fire and forget
+    status: 1               # health/status: at-least-once
+  retain:
+    telemetry: false        # never retain high-rate telemetry
+    status: true            # retain status topics so late joiners see state
+
+i2c:
+  mux:
+    driver: tca9548a        # SparkFun Qwiic Mux is PCA9548A-based; same driver
+    address: 0x70
+
+logging:
+  level: INFO               # DEBUG | INFO | WARNING | ERROR
+  format: plain             # plain | json
+
+# true => registry resolves every driver to its mock implementation; the
+# full pipeline (scheduler, MQTT, fusion, validation) runs with no hardware.
+use_mock_drivers: false
+
+health:
+  reinit_after_failures: 3  # consecutive read failures before re-init attempt
+  backoff_initial_s: 1.0    # retry backoff: 1, 2, 4, ... capped below
+  backoff_max_s: 60.0
+  heartbeat_interval_s: 30.0  # periodic status publish even when healthy
+
+# -----------------------------------------------------------------------------
+# Sensors. One entry per physical device. Fields:
+#   name            unique ID; also the status topic leaf (status/<name>)
+#   driver          registry key (see sensor_service/drivers/)
+#   enabled         false => skipped entirely at startup
+#   mux_channel     0-7 on the Qwiic mux; must be unique among enabled sensors
+#   address         I2C address on that channel
+#   sample_rate_hz  per-sensor polling rate
+#   topic_suffix    appended to base_topic for telemetry
+#   role            free-text role tag included in every payload
+#   params          driver-specific settings (documented per driver)
+# -----------------------------------------------------------------------------
+sensors:
+  # --- Position (ToF). The three sensors all default to address 0x29; each
+  #     gets its own mux channel so no address reassignment is needed.
+  #     position_mm = sign * distance_mm + offset_mm  (set after calibration)
+  - name: tof_z
+    driver: vl53l0x
+    enabled: true
+    mux_channel: 0
+    address: 0x29
+    sample_rate_hz: 20
+    topic_suffix: position/z
+    role: z_position
+    params:
+      axis: z
+      mount: toolhead       # toolhead-mounted, ranging downward
+      sign: 1.0             # Z = reading + offset
+      offset_mm: 0.0        # calibrate: nozzle at Z=0 -> offset = -reading
+      timing_budget_us: 33000
+
+  - name: tof_x
+    driver: vl53l1x
+    enabled: true
+    mux_channel: 1
+    address: 0x29
+    sample_rate_hz: 20
+    topic_suffix: position/x
+    role: x_position
+    params:
+      axis: x
+      mount: frame          # frame-mounted, ranging at the toolhead
+      sign: -1.0            # X = offset - reading
+      offset_mm: 0.0        # calibrate: toolhead at X=0 -> offset = +reading
+      distance_mode: 1      # 1 = short (<1.3 m, best ambient immunity)
+      timing_budget_ms: 33
+
+  - name: tof_y
+    driver: vl53l1x
+    enabled: true
+    mux_channel: 2
+    address: 0x29
+    sample_rate_hz: 20
+    topic_suffix: position/y
+    role: y_position
+    params:
+      axis: y
+      mount: frame
+      sign: -1.0
+      offset_mm: 0.0
+      distance_mode: 1
+      timing_budget_ms: 33
+
+  # --- Vibration / motion
+  - name: accel_buildplate
+    driver: adxl345
+    enabled: true
+    mux_channel: 3
+    address: 0x53
+    sample_rate_hz: 100
+    topic_suffix: acceleration/buildplate
+    role: buildplate_vibration
+    params:
+      range_g: 4            # 2 | 4 | 8 | 16
+
+  - name: imu_printhead
+    driver: mpu6050
+    enabled: true
+    mux_channel: 4
+    address: 0x68
+    sample_rate_hz: 100
+    topic_suffix: acceleration/printhead
+    role: printhead_motion
+    params: {}
+
+  # --- Thermal / environment / presence
+  - name: thermal_cam
+    driver: amg8833
+    enabled: true
+    mux_channel: 5
+    address: 0x69
+    sample_rate_hz: 5       # AMG8833 max ~10 Hz
+    topic_suffix: thermal
+    role: thermal_view
+    params: {}
+
+  - name: environment
+    driver: bme280
+    enabled: true
+    mux_channel: 6
+    address: 0x77
+    sample_rate_hz: 0.5
+    topic_suffix: environment
+    role: ambient_environment
+    params: {}
+
+  - name: proximity
+    driver: vcnl4010
+    enabled: true
+    mux_channel: 7
+    address: 0x13
+    sample_rate_hz: 5
+    topic_suffix: proximity
+    role: person_detection
+    params:
+      present_threshold: 2200   # raw counts; tune on site with a person at
+      hysteresis: 200           # typical viewing distance
+
+# Fused X/Y/Z from the three ToF sensors -> <base_topic>/position
+fusion:
+  position:
+    enabled: true
+    publish_rate_hz: 10
+    max_age_s: 1.0          # omit an axis whose last sample is older than this
+
+# OctoPrint comparison -> <base_topic>/validation/<axis> + CSV
+validation:
+  enabled: true
+  octoprint_base_topic: "octoPrint"   # OctoPrint MQTT plugin default
+  max_alignment_gap_s: 0.5            # reject pairs further apart than this
+  buffer_seconds: 15.0                # sensor sample ring-buffer horizon
+  csv_dir: /var/log/lulzbot-sensors   # null disables CSV logging
